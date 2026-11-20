@@ -1,0 +1,41 @@
+# =============================================================================
+# FraudShield AI: Dependencies
+# Real-Time Financial Fraud Detection & Investigation Platform
+# =============================================================================
+
+# Core Data Processing & Numerics
+pandas>=2.1.0
+numpy>=1.26.0
+
+# Database & ORM (PostgreSQL 17 compatible)
+psycopg2-binary>=2.9.9
+SQLAlchemy>=2.0.25
+
+# Synthetic Data Generation
+Faker>=22.5.0
+
+# Environment Configuration
+python-dotenv>=1.0.1
+
+# High-Performance Backend API & Validation
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+pydantic>=2.6.0
+
+# Machine Learning & Explainable AI (XAI)
+scikit-learn>=1.4.0
+xgboost>=2.0.3
+shap>=0.45.0
+
+# Graph Analytics & Fraud Ring Analysis
+networkx>=3.2.1
+
+# Interactive Frontend Dashboard & Analytics
+streamlit>=1.32.0
+plotly>=5.20.0
+
+# Generative AI & Autonomous Investigation
+google-genai>=0.1.1
+
+# Quality Assurance & Testing
+pytest>=8.0.0
