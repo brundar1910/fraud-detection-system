@@ -19,30 +19,30 @@
 ```mermaid
 flowchart TD
     subgraph Data_Layer ["Data & Simulation Layer"]
-        A[Synthetic PaySim Generator<br>50,000 Transactions] --> B[Real-Time Stream Producer<br>streaming/transaction_stream.py]
-        B --> C[(PostgreSQL 17 fraud_db<br>9 Tables + 3 Analytical Views)]
+        A["Synthetic PaySim Generator<br>50,000 Transactions"] --> B["Real-Time Stream Producer<br>streaming/transaction_stream.py"]
+        B --> C[("PostgreSQL 17 fraud_db<br>9 Tables + 3 Analytical Views")]
     end
 
     subgraph Intelligence_Core ["Intelligence & Detection Core"]
-        C --> D[Feature Engineering Pipeline<br>28 Behavioral & Delta Features]
-        D --> E[XGBoost Classifier<br>PR-AUC: 0.9259 | ROC-AUC: 0.9856]
-        E --> F[Tree SHAP Explainer<br>Local Feature Impact Attributions]
-        C --> G[NetworkX Graph Engine<br>Sub-5s Ring & Cycle Detection]
+        C --> D["Feature Engineering Pipeline<br>28 Behavioral & Delta Features"]
+        D --> E["XGBoost Classifier<br>PR-AUC: 0.9259 | ROC-AUC: 0.9856"]
+        E --> F["Tree SHAP Explainer<br>Local Feature Impact Attributions"]
+        C --> G["NetworkX Graph Engine<br>Sub-5s Ring & Cycle Detection"]
     end
 
     subgraph Autonomous_Agent ["Autonomous Forensics"]
-        F --> H[AI Investigation Agent<br>Google GenAI Gemini 2.5 Flash]
+        F --> H["AI Investigation Agent<br>Google GenAI Gemini 2.5 Flash"]
         G --> H
-        H --> I[(investigation_reports<br>Actionable Dossiers & SARs)]
+        H --> I[("investigation_reports<br>Actionable Dossiers & SARs")]
     end
 
     subgraph Serving_Layer ["Presentation & Serving Layer"]
-        E --> J[FastAPI Backend Server<br>backend/main.py]
+        E --> J["FastAPI Backend Server<br>backend/main.py"]
         F --> J
         G --> J
         H --> J
-        J --> K[Streamlit Forensic Dashboard<br>frontend/app.py]
-        C --> L[Power BI Desktop<br>Executive BI Dashboard]
+        J --> K["Streamlit Forensic Dashboard<br>frontend/app.py"]
+        C --> L["Power BI Desktop<br>Executive BI Dashboard"]
     end
 ```
 
