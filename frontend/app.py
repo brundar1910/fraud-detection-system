@@ -1,14 +1,16 @@
 """
 FraudShield AI - Next-Generation Financial Fraud Detection & Investigation Platform
-Interactive Streamlit & Plotly Forensic Dashboard.
+Interactive Streamlit & Plotly Forensic Dashboard with Live What-If Sandbox.
 """
 
 import os
 import sys
 import json
 import time
+import uuid
 from pathlib import Path
 from datetime import datetime, timezone
+from typing import Dict, Any, List
 
 import pandas as pd
 import numpy as np
@@ -95,7 +97,6 @@ def load_metrics_summary():
     }
 
 
-@st.cache_data(ttl=20)
 def load_recent_alerts(limit=50):
     conn = get_db_connection()
     cur = conn.cursor()
@@ -112,7 +113,7 @@ def load_recent_alerts(limit=50):
     return pd.DataFrame(rows)
 
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=20)
 def load_customer_risk_data():
     conn = get_db_connection()
     cur = conn.cursor()
@@ -122,7 +123,7 @@ def load_customer_risk_data():
                risk_rank, total_transactions, total_spent, total_alerts_raised
         FROM vw_customer_risk_scores
         ORDER BY calculated_composite_risk DESC
-        LIMIT 250;
+        LIMIT 500;
     """)
     rows = cur.fetchall()
     cur.close()
@@ -130,7 +131,7 @@ def load_customer_risk_data():
     return pd.DataFrame(rows)
 
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=20)
 def load_merchant_risk_data():
     conn = get_db_connection()
     cur = conn.cursor()
@@ -141,7 +142,7 @@ def load_merchant_risk_data():
                alert_rate_pct, operational_risk_tier
         FROM vw_merchant_risk_summary
         ORDER BY total_fraud_alerts_incurred DESC, alert_rate_pct DESC
-        LIMIT 100;
+        LIMIT 200;
     """)
     rows = cur.fetchall()
     cur.close()
@@ -189,45 +190,37 @@ st.markdown("""
         padding: 16px 20px;
         margin-bottom: 12px;
     }
-    .metric-value {
-        font-size: 28px;
-        font-weight: 700;
-        color: #f8fafc;
-    }
-    .metric-title {
-        font-size: 13px;
-        font-weight: 500;
-        color: #94a3b8;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
     .badge-critical {
         background-color: #ef4444;
         color: white;
-        padding: 3px 8px;
-        border-radius: 4px;
-        font-weight: bold;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-weight: 700;
+        font-size: 13px;
     }
     .badge-high {
         background-color: #f97316;
         color: white;
-        padding: 3px 8px;
-        border-radius: 4px;
-        font-weight: bold;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-weight: 700;
+        font-size: 13px;
     }
     .badge-medium {
         background-color: #eab308;
         color: black;
-        padding: 3px 8px;
-        border-radius: 4px;
-        font-weight: bold;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-weight: 700;
+        font-size: 13px;
     }
     .badge-low {
         background-color: #22c55e;
         color: white;
-        padding: 3px 8px;
-        border-radius: 4px;
-        font-weight: bold;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-weight: 700;
+        font-size: 13px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -251,7 +244,7 @@ with st.sidebar:
     st.markdown("• **Agent**: Gemini 2.5 Flash")
     st.markdown("---")
 
-    if st.button("🔄 Refresh System Data"):
+    if st.button("🔄 Refresh System Data", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
@@ -259,9 +252,10 @@ with st.sidebar:
 # -----------------------------------------------------------------------------
 # Top Navigation Tabs
 # -----------------------------------------------------------------------------
-tab_overview, tab_monitor, tab_explorer, tab_graph, tab_workbench = st.tabs([
+tab_overview, tab_monitor, tab_sandbox, tab_explorer, tab_graph, tab_workbench = st.tabs([
     "📊 Executive Overview",
-    "⚡ Real-Time Monitor & Simulator",
+    "⚡ Real-Time Alert Monitor",
+    "🧪 What-If Sandbox Simulator",
     "🔍 Customer & Merchant Risk",
     "🕸️ Graph Fraud Network",
     "🤖 AI Investigation Workbench",
@@ -354,7 +348,6 @@ with tab_overview:
 
     with col_chart2:
         st.subheader("Model Risk Tier Distribution")
-        # Query risk tiers
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute("SELECT risk_tier, COUNT(*) AS count FROM fraud_predictions GROUP BY risk_tier;")
@@ -378,158 +371,326 @@ with tab_overview:
 
 
 # =============================================================================
-# TAB 2: REAL-TIME ALERT MONITOR & SIMULATOR
+# TAB 2: REAL-TIME ALERT MONITOR WITH AUTO-REFRESH & FRAUD BURST SIMULATOR
 # =============================================================================
 with tab_monitor:
-    st.header("Real-Time Surveillance Feed & Live Simulator")
-    st.markdown("Live event stream monitor integrated directly with the XGBoost + SHAP scoring pipeline.")
+    st.header("⚡ Real-Time Alert Surveillance Monitor")
+    st.markdown("Live streaming alerts feed with configurable auto-refresh and synthetic fraud injection.")
 
-    col_sim, col_feed = st.columns([1, 2])
+    col_ctrl1, col_ctrl2, col_ctrl3 = st.columns([2, 2, 3])
 
-    with col_sim:
-        st.subheader("🧪 Live Scoring Simulator")
-        st.markdown("Inject a live transaction directly into the pipeline:")
+    with col_ctrl1:
+        auto_refresh = st.toggle("⏱️ Auto-Refresh Feed (every 3s)", value=False, key="auto_refresh_toggle")
 
-        sim_type = st.selectbox("Transaction Scenario", [
-            "Normal In-Store Payment ($45.00)",
-            "High-Volume Account Drain Spike ($14,500.00)",
-            "Coordinated Shell Merchant Transfer ($6,200.00)",
-            "Rapid Velocity Card-Testing ($125.00)",
-        ])
+    with col_ctrl2:
+        if st.button("💥 Simulate Fraud Burst (5 Txns)", type="primary", use_container_width=True):
+            with st.spinner("Injecting 5 coordinated anomalous transactions into PostgreSQL..."):
+                from streaming.transaction_stream import RealTimeTransactionStreamer
+                streamer = RealTimeTransactionStreamer(interval_seconds=0.1)
+                for _ in range(5):
+                    ev = streamer.generate_single_event(force_fraud=True)
+                    streamer.process_and_persist_event(ev)
+                st.toast("Injected 5 rapid fraud transactions into PostgreSQL!", icon="🚨")
+                st.cache_data.clear()
+                time.sleep(0.5)
+                st.rerun()
 
-        custom_amount = st.number_input("Transaction Amount ($)", min_value=1.0, value=450.0, step=50.0)
-        custom_type = st.selectbox("Transaction Type", ["PAYMENT", "TRANSFER", "CASH_OUT", "DEBIT"])
-        custom_channel = st.selectbox("Channel", ["ONLINE", "MOBILE_APP", "IN_STORE", "ATM", "API"])
-
-        if st.button("⚡ Score Transaction Live", type="primary"):
-            # Execute live prediction
-            conn = get_db_connection()
-            cur = conn.cursor()
-            cur.execute("SELECT account_id, account_number, balance FROM accounts LIMIT 1;")
-            sample_acc = cur.fetchone()
-            cur.close()
-            conn.close()
-
-            acc_id = str(sample_acc["account_id"])
-            predictor = FraudPredictor()
-
-            tx_event = {
-                "transaction_id": str(os.urandom(16).hex()),
-                "account_id": acc_id,
-                "merchant_id": None,
-                "amount": custom_amount,
-                "currency": "USD",
-                "transaction_type": custom_type,
-                "channel": custom_channel,
-                "status": "PENDING",
-                "step": 744,
-                "oldbalance_orig": float(sample_acc["balance"]),
-                "newbalance_orig": max(0.0, float(sample_acc["balance"]) - custom_amount),
-                "oldbalance_dest": 0.0,
-                "newbalance_dest": 0.0,
-                "name_orig": sample_acc["account_number"],
-                "name_dest": "MERC_SIMULATED",
-                "is_fraud": False,
-                "is_flagged_fraud": False,
-                "ip_address": "127.0.0.1",
-                "device_id": "dev_simulator",
-                "timestamp": datetime.now(timezone.utc),
-                "merchant_risk_level": "LOW",
-                "merchant_mcc": "0000",
-            }
-
-            df_sim = pd.DataFrame([tx_event])
-            pred = predictor.predict_batch(df_sim, compute_shap=True)[0]
-
-            st.success("Transaction Evaluated Successfully!")
-            st.metric("Fraud Probability", f"{pred['fraud_probability']*100:.1f}%")
-            st.markdown(f"**Risk Tier:** `{pred['risk_tier']}` | **Verdict:** `{pred['prediction_label']}`")
-
-            # SHAP Bar Chart
-            if pred["top_features"]:
-                st.markdown("**Top Mathematical Drivers (SHAP Impact):**")
-                shap_df = pd.DataFrame([
-                    {"Feature": k, "Impact (+SHAP)": v}
-                    for k, v in pred["top_features"].items()
-                ])
-                fig_shap = px.bar(
-                    shap_df,
-                    x="Impact (+SHAP)",
-                    y="Feature",
-                    orientation="h",
-                    color="Impact (+SHAP)",
-                    color_continuous_scale="Reds",
-                )
-                fig_shap.update_layout(height=220, margin=dict(l=10, r=10, t=10, b=10))
-                st.plotly_chart(fig_shap, use_container_width=True)
-
-    with col_feed:
-        st.subheader("🚨 Live Alerts Feed")
+    with col_ctrl3:
         sev_filter = st.multiselect(
-            "Filter by Severity",
+            "Filter Severity",
             ["CRITICAL", "HIGH", "MEDIUM", "LOW"],
-            default=["CRITICAL", "HIGH"],
+            default=["CRITICAL", "HIGH", "MEDIUM"],
+            key="alert_sev_filter",
         )
 
-        df_alerts = load_recent_alerts(limit=100)
-        if not df_alerts.empty:
-            filtered_alerts = df_alerts[df_alerts["severity"].isin(sev_filter)]
-            st.dataframe(
-                filtered_alerts[[
-                    "created_at", "severity", "risk_score", "rule_name",
-                    "rule_description", "account_id", "transaction_id"
-                ]],
-                column_config={
-                    "created_at": "Timestamp",
-                    "severity": st.column_config.TextColumn("Severity"),
-                    "risk_score": st.column_config.ProgressColumn("Risk Score", min_value=0, max_value=100),
-                    "rule_name": "Triggered Rule",
-                    "rule_description": "Forensic Description",
-                },
-                hide_index=True,
-                height=450,
-                use_container_width=True,
-            )
-        else:
-            st.info("No active fraud alerts detected.")
+    st.markdown("---")
+
+    # Load fresh alerts
+    df_alerts = load_recent_alerts(limit=100)
+
+    if not df_alerts.empty:
+        filtered_alerts = df_alerts[df_alerts["severity"].isin(sev_filter)] if sev_filter else df_alerts
+        st.caption(f"Displaying **{len(filtered_alerts)}** real-time alerts (sorted by newest first):")
+        st.dataframe(
+            filtered_alerts[[
+                "created_at", "severity", "risk_score", "rule_name",
+                "rule_description", "account_id", "transaction_id"
+            ]],
+            column_config={
+                "created_at": "Timestamp",
+                "severity": st.column_config.TextColumn("Severity"),
+                "risk_score": st.column_config.ProgressColumn("Risk Score", min_value=0, max_value=100),
+                "rule_name": "Triggered Rule",
+                "rule_description": "Forensic Description",
+            },
+            hide_index=True,
+            height=480,
+            use_container_width=True,
+        )
+    else:
+        st.info("No alerts found matching filter criteria.")
+
+    # Auto-refresh loop
+    if auto_refresh:
+        time.sleep(3)
+        st.rerun()
 
 
 # =============================================================================
-# TAB 3: CUSTOMER & MERCHANT RISK EXPLORER
+# TAB 3: WHAT-IF SANDBOX & TRANSACTION SCORING SIMULATOR
+# =============================================================================
+with tab_sandbox:
+    st.header("🧪 What-If Transaction Sandbox Simulator")
+    st.markdown(
+        "Interactively adjust financial parameters, behavioral baselines, and hardware signatures "
+        "to evaluate real-time **XGBoost probability** and **local Tree SHAP feature attributions**."
+    )
+
+    # Preset Scenarios
+    st.markdown("##### ⚡ Quick Scenarios")
+    p1, p2, p3, p4 = st.columns(4)
+    preset_choice = None
+    if p1.button("☕ Normal Coffee / Grocery ($15)", use_container_width=True):
+        preset_choice = "normal"
+    if p2.button("🚨 ATO Wire Account Drain ($18,500)", use_container_width=True):
+        preset_choice = "ato_drain"
+    if p3.button("🤖 Card-Testing Bot Burst ($45)", use_container_width=True):
+        preset_choice = "bot_burst"
+    if p4.button("💎 Luxury Jewelry Funnel ($7,500)", use_container_width=True):
+        preset_choice = "luxury_ring"
+
+    st.markdown("---")
+
+    col_inputs, col_outputs = st.columns([1, 1], gap="large")
+
+    with col_inputs:
+        st.subheader("📝 Transaction Parameters")
+
+        # Preset default overrides
+        def_amount = 18500.0 if preset_choice == "ato_drain" else (15.0 if preset_choice == "normal" else (45.0 if preset_choice == "bot_burst" else 7500.0 if preset_choice == "luxury_ring" else 2500.0))
+        def_mean = 120.0 if preset_choice in ("ato_drain", "luxury_ring") else (45.0 if preset_choice == "normal" else 30.0)
+        def_vel = 12 if preset_choice == "bot_burst" else (1 if preset_choice == "normal" else 4)
+        def_drain = True if preset_choice == "ato_drain" else False
+        def_mcc = 4 if preset_choice == "ato_drain" else (0 if preset_choice == "normal" else (3 if preset_choice == "luxury_ring" else 2))
+        def_infra = 1 if preset_choice in ("ato_drain", "luxury_ring", "bot_burst") else 0
+
+        sim_amount = st.slider("Transaction Amount ($ USD)", min_value=1.0, max_value=30000.0, value=float(def_amount), step=25.0)
+        sim_mean = st.slider("Customer 30-Day Mean Amount ($)", min_value=10.0, max_value=2500.0, value=float(def_mean), step=10.0)
+        sim_vel = st.slider("Transactions in Last 10 Minutes (Velocity)", min_value=1, max_value=25, value=int(def_vel), step=1)
+
+        mcc_options = [
+            ("5411", "5411 - Grocery Stores / Supermarkets (LOW Risk)", "LOW"),
+            ("5812", "5812 - Restaurants and Fast Food (LOW Risk)", "LOW"),
+            ("5732", "5732 - Electronic Sales & Equipment (MEDIUM Risk)", "MEDIUM"),
+            ("5944", "5944 - Jewelry, Watch & Luxury Goods (HIGH Risk)", "HIGH"),
+            ("4829", "4829 - Wire Transfer / Remittance (HIGH Risk)", "HIGH"),
+            ("7995", "7995 - Betting & Casino Gambling (CRITICAL Risk)", "CRITICAL"),
+            ("5999", "5999 - Shell Merchant / Suspicious Ring (CRITICAL Risk)", "CRITICAL"),
+        ]
+        mcc_idx = st.selectbox("Merchant Business Category (MCC)", range(len(mcc_options)), format_func=lambda i: mcc_options[i][1], index=def_mcc)
+        selected_mcc, selected_cat_name, selected_risk_level = mcc_options[mcc_idx]
+
+        infra_options = [
+            "Clean Single-User Device & Dedicated Residential IP",
+            "Hardware Fingerprint Shared Across 10+ Accounts (Syndicate Signature)",
+        ]
+        infra_choice = st.selectbox("Device / Network Infrastructure Fingerprint", infra_options, index=def_infra)
+        is_shared_device = (infra_choice != infra_options[0])
+
+        sim_type = st.selectbox("Transaction Type", ["TRANSFER", "PAYMENT", "CASH_OUT", "DEBIT", "CASH_IN"], index=0 if preset_choice == "ato_drain" else 1)
+        sim_channel = st.selectbox("Channel", ["ONLINE", "API", "MOBILE_APP", "IN_STORE", "ATM"], index=0 if preset_choice == "ato_drain" else (1 if preset_choice == "luxury_ring" else 2))
+
+        sim_drain = st.checkbox("Account Liquidation (Drains Originating Balance to Zero)", value=def_drain)
+
+    with col_outputs:
+        st.subheader("🎯 Real-Time ML & SHAP Evaluation")
+
+        # Synthesize event for predictor
+        old_bal = sim_amount if sim_drain else (sim_amount * 2.2)
+        new_bal = 0.0 if sim_drain else (old_bal - sim_amount)
+
+        tx_payload = {
+            "transaction_id": str(uuid.uuid4()),
+            "account_id": str(uuid.uuid4()),
+            "merchant_id": str(uuid.uuid4()),
+            "amount": sim_amount,
+            "currency": "USD",
+            "transaction_type": sim_type,
+            "channel": sim_channel,
+            "status": "PENDING",
+            "step": 740,
+            "oldbalance_orig": old_bal,
+            "newbalance_orig": new_bal,
+            "oldbalance_dest": 100.0,
+            "newbalance_dest": 100.0 + sim_amount,
+            "name_orig": "C00009999",
+            "name_dest": "MERC_SANDBOX",
+            "is_fraud": False,
+            "is_flagged_fraud": False,
+            "ip_address": "75.4.103.151" if is_shared_device else "192.168.1.10",
+            "device_id": "473f6928eeccb38da5152341879606f1" if is_shared_device else "dev_clean",
+            "timestamp": datetime.now(timezone.utc),
+            "merchant_risk_level": selected_risk_level,
+            "merchant_mcc": selected_mcc,
+        }
+
+        # Predict using production engine
+        predictor = FraudPredictor()
+        df_tx_eval = pd.DataFrame([tx_payload])
+        pred_res = predictor.predict_batch(df_tx_eval, compute_shap=True, top_k_features=5)[0]
+
+        prob = pred_res["fraud_probability"]
+        risk_pct = prob * 100.0
+        tier = pred_res["risk_tier"]
+        label = pred_res["prediction_label"]
+
+        # 1. Plotly Risk Gauge Meter
+        gauge_color = "#ef4444" if tier == "CRITICAL" else ("#f97316" if tier == "HIGH" else ("#eab308" if tier == "MEDIUM" else "#22c55e"))
+        fig_gauge = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=risk_pct,
+            domain={'x': [0, 1], 'y': [0, 1]},
+            title={'text': f"Risk Score: {tier} ({label})", 'font': {'size': 20, 'color': gauge_color}},
+            number={'suffix': "%", 'font': {'size': 36, 'color': gauge_color}},
+            gauge={
+                'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "#94a3b8"},
+                'bar': {'color': gauge_color, 'thickness': 0.3},
+                'bgcolor': "#1e293b",
+                'borderwidth': 2,
+                'bordercolor': "#334155",
+                'steps': [
+                    {'range': [0, 30], 'color': 'rgba(34, 197, 94, 0.2)'},
+                    {'range': [30, 60], 'color': 'rgba(234, 179, 8, 0.2)'},
+                    {'range': [60, 85], 'color': 'rgba(249, 115, 22, 0.2)'},
+                    {'range': [85, 100], 'color': 'rgba(239, 68, 68, 0.2)'},
+                ],
+                'threshold': {
+                    'line': {'color': "#ffffff", 'width': 3},
+                    'thickness': 0.8,
+                    'value': 75.0,
+                }
+            }
+        ))
+        fig_gauge.update_layout(height=260, margin=dict(l=20, r=20, t=35, b=20))
+        st.plotly_chart(fig_gauge, use_container_width=True)
+
+        # Behavioral Ratios Cards
+        r1, r2, r3 = st.columns(3)
+        spike_ratio = sim_amount / max(1.0, sim_mean)
+        with r1:
+            st.metric("Spike Ratio", f"{spike_ratio:.1f}x", delta="Vs 30d Mean", delta_color="inverse" if spike_ratio > 3.0 else "normal")
+        with r2:
+            st.metric("Velocity Burst", f"{sim_vel} txns", delta="Last 10 mins", delta_color="inverse" if sim_vel > 5 else "normal")
+        with r3:
+            st.metric("Inference Latency", f"{pred_res['inference_latency_ms']} ms", delta="XGBoost + SHAP")
+
+        # 2. Horizontal SHAP Bar Chart
+        st.markdown("##### 🔬 SHAP Local Feature Impact Drivers")
+        top_shap = pred_res.get("top_features", {})
+        if top_shap:
+            shap_data = [{"Feature": k, "Impact (+SHAP Contribution)": v} for k, v in top_shap.items()]
+            df_shap_plot = pd.DataFrame(shap_data).sort_values(by="Impact (+SHAP Contribution)", ascending=True)
+
+            fig_shap_bar = px.bar(
+                df_shap_plot,
+                x="Impact (+SHAP Contribution)",
+                y="Feature",
+                orientation="h",
+                color="Impact (+SHAP Contribution)",
+                color_continuous_scale="Reds",
+                text="Impact (+SHAP Contribution)",
+            )
+            fig_shap_bar.update_traces(texttemplate='+%{text:.2f}', textposition='outside')
+            fig_shap_bar.update_layout(
+                height=240,
+                margin=dict(l=10, r=30, t=10, b=10),
+                coloraxis_showscale=False,
+            )
+            st.plotly_chart(fig_shap_bar, use_container_width=True)
+
+
+# =============================================================================
+# TAB 4: CUSTOMER & MERCHANT RISK EXPLORER (SEARCH & PILL FILTERS)
 # =============================================================================
 with tab_explorer:
-    st.header("Entity Risk Telemetry Explorer")
-    st.markdown("Detailed investigation views on individual customer portfolios and registered merchant categories.")
+    st.header("🔍 Entity Risk Telemetry Explorer")
+    st.markdown("Interactive drill-down tables featuring search keywords and risk-tier filter pills.")
 
     subtab_cust, subtab_merch = st.tabs(["👤 Customer 360 Risk Profiles", "🏪 Merchant Risk & MCC Summary"])
 
+    # 1. Customer Explorer Subtab
     with subtab_cust:
         df_cust = load_customer_risk_data()
-        cust_tier = st.selectbox("Filter Customer Tier", ["ALL", "CRITICAL", "HIGH", "MEDIUM", "LOW"])
 
-        if cust_tier != "ALL":
-            df_cust_view = df_cust[df_cust["risk_tier"] == cust_tier]
-        else:
-            df_cust_view = df_cust
+        cc1, cc2 = st.columns([1, 2])
+        with cc1:
+            # Risk Tier Filter Pills
+            tier_options = ["ALL", "CRITICAL", "HIGH", "MEDIUM", "LOW"]
+            if hasattr(st, "pills"):
+                cust_tier_pill = st.pills("Filter Risk Tier", tier_options, default="ALL", key="cust_tier_pills")
+            else:
+                cust_tier_pill = st.radio("Filter Risk Tier", tier_options, horizontal=True, key="cust_tier_radio")
 
+        with cc2:
+            cust_search = st.text_input("🔍 Search Customer by Name, Email, or ID", "", key="cust_search_input")
+
+        # Apply filtering
+        df_cust_filtered = df_cust.copy()
+        if cust_tier_pill and cust_tier_pill != "ALL":
+            df_cust_filtered = df_cust_filtered[df_cust_filtered["risk_tier"] == cust_tier_pill]
+        if cust_search.strip():
+            kw = cust_search.strip().lower()
+            df_cust_filtered = df_cust_filtered[
+                df_cust_filtered["customer_name"].str.lower().str.contains(kw) |
+                df_cust_filtered["email"].str.lower().str.contains(kw) |
+                df_cust_filtered["customer_id"].astype(str).str.lower().str.contains(kw)
+            ]
+
+        st.caption(f"Showing **{len(df_cust_filtered)}** customer profiles:")
         st.dataframe(
-            df_cust_view,
+            df_cust_filtered,
             column_config={
                 "customer_name": "Customer Name",
                 "calculated_composite_risk": st.column_config.ProgressColumn("Composite Risk", min_value=0, max_value=100),
                 "total_spent": st.column_config.NumberColumn("Total Spent ($)", format="$%.2f"),
                 "total_alerts_raised": "Alerts Raised",
                 "risk_rank": "Rank #",
+                "risk_tier": "Risk Tier",
             },
             hide_index=True,
             use_container_width=True,
-            height=380,
+            height=400,
         )
 
+    # 2. Merchant Explorer Subtab
     with subtab_merch:
         df_merch = load_merchant_risk_data()
+
+        mc1, mc2 = st.columns([1, 2])
+        with mc1:
+            merch_tier_options = ["ALL", "CRITICAL", "HIGH", "MEDIUM", "LOW"]
+            if hasattr(st, "pills"):
+                merch_tier_pill = st.pills("Filter Merchant Risk Tier", merch_tier_options, default="ALL", key="merch_tier_pills")
+            else:
+                merch_tier_pill = st.radio("Filter Merchant Risk Tier", merch_tier_options, horizontal=True, key="merch_tier_radio")
+
+        with mc2:
+            merch_search = st.text_input("🔍 Search Merchant by Name, MCC, or Category", "", key="merch_search_input")
+
+        df_merch_filtered = df_merch.copy()
+        if merch_tier_pill and merch_tier_pill != "ALL":
+            df_merch_filtered = df_merch_filtered[df_merch_filtered["operational_risk_tier"] == merch_tier_pill]
+        if merch_search.strip():
+            kw = merch_search.strip().lower()
+            df_merch_filtered = df_merch_filtered[
+                df_merch_filtered["merchant_name"].str.lower().str.contains(kw) |
+                df_merch_filtered["category_name"].str.lower().str.contains(kw) |
+                df_merch_filtered["category_code"].astype(str).str.lower().str.contains(kw)
+            ]
+
+        st.caption(f"Showing **{len(df_merch_filtered)}** merchant entities:")
         st.dataframe(
-            df_merch,
+            df_merch_filtered,
             column_config={
                 "merchant_name": "Merchant Name",
                 "category_name": "Business Category",
@@ -540,12 +701,12 @@ with tab_explorer:
             },
             hide_index=True,
             use_container_width=True,
-            height=380,
+            height=400,
         )
 
 
 # =============================================================================
-# TAB 4: GRAPH-BASED FRAUD NETWORK
+# TAB 5: GRAPH-BASED FRAUD NETWORK
 # =============================================================================
 with tab_graph:
     st.header("Graph Intelligence & Syndicate Analysis")
@@ -573,7 +734,6 @@ with tab_graph:
     edges = subgraph["edges"]
 
     if nodes:
-        # Create deterministic 2D circular/spring layout positions
         pos = {}
         n_count = len(nodes)
         for i, node in enumerate(nodes):
@@ -582,7 +742,6 @@ with tab_graph:
             pos[node["id"]] = (radius * np.cos(angle), radius * np.sin(angle))
 
         edge_x, edge_y = [], []
-        edge_colors = []
         for e in edges:
             if e["source"] in pos and e["target"] in pos:
                 x0, y0 = pos[e["source"]]
@@ -636,10 +795,10 @@ with tab_graph:
 
 
 # =============================================================================
-# TAB 5: AI INVESTIGATION WORKBENCH
+# TAB 6: AI INVESTIGATION WORKBENCH
 # =============================================================================
 with tab_workbench:
-    st.header("Autonomous AI Forensic Investigation Workbench")
+    st.header("🤖 Autonomous AI Forensic Investigation Workbench")
     st.markdown("Automated forensic synthesis combining XGBoost Tree SHAP, heuristic rules, and Google GenAI.")
 
     # Select flagged transaction
@@ -666,7 +825,7 @@ with tab_workbench:
     selected_label = st.selectbox("Select Target Flagged Transaction", list(options.keys()))
     target_tx_id = options[selected_label]
 
-    if st.button("🚀 Generate Autonomous Forensic Dossier", type="primary"):
+    if st.button("🚀 Generate Autonomous Forensic Dossier", type="primary", use_container_width=True):
         with st.spinner("Synthesizing multi-modal evidence and consulting AI Investigation Agent..."):
             agent = FraudInvestigationAgent()
             report = agent.generate_report(target_tx_id)
